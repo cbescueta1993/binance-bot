@@ -1,0 +1,16 @@
+{
+    "name": "you/supertrend-bot",
+    "description": "Binance Futures Supertrend + Martingale bot",
+    "type": "project",
+    "require": {
+        "php": ">=8.1",
+        "ratchet/pawl": "^0.4.1",
+        "react/event-loop": "^1.5",
+        "react/socket": "^1.15"
+    },
+    "autoload": {
+        "psr-4": {
+            "SupertrendBot\\": "src/"
+        }
+    }
+}
