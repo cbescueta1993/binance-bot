@@ -144,7 +144,7 @@ class MarketStream
 
         $streamSymbol = strtolower($this->config->symbol);
 
-        $url = 'wss://fstream.binance.com/market/ws/' . $streamSymbol . '@kline_' . $this->config->interval;
+        $url = 'wss://fstream.binance.com/ws/' . $streamSymbol . '@kline_' . $this->config->interval;
 
         $this->logger->info('Connecting Market WebSocket...');
 

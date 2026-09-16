@@ -158,3 +158,23 @@ WebSocket data the same way it did for market data, going live will
 hit the same wall even with `MARKET_DATA_MODE=poll`. If that turns
 out to be the case, running the bot from a VPS outside the affected
 network is the durable fix for the trading side, not just monitoring.
+
+## Web dashboard
+
+`dashboard.php` is a read-only page showing win rate, total realized
+PnL, current position, martingale level, and a table + chart of
+recent trades. It reads `data/state.json` and `data/trades.jsonl`
+directly - the same files the bot writes - so there's nothing to
+configure and it never writes anything itself.
+
+Since you're already running XAMPP, just open it in a browser while
+`bot.php` is running:
+
+```
+http://localhost/supertrend-bot/dashboard.php
+```
+
+(adjust the path if your folder is named differently under
+`htdocs`). It auto-refreshes every 15 seconds. Requires internet
+access for the chart library (loaded from a CDN) - the stats cards
+and trade table still work fine without it.

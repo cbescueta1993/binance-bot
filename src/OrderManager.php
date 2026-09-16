@@ -178,40 +178,16 @@ class OrderManager
     public function executeOrder(string $signal): void
     {
         $state = $this->state->load();
-        $targetSide = ($signal === 'BUY') ? 'BUY' : 'SELL';
 
-        // If a position is already open
         if ($state['position'] !== 'NONE') {
-            // If the signal is in the same direction, ignore it
-            if ($state['positionSide'] === $targetSide) {
-                $this->logger->info(
-                    'Position already exists in the same direction: ' . $state['position'] . ' ' . $state['positionSide']
-                );
-                return;
-            }
-
-            // Opposite signal detected: Close and Reverse!
-            $this->logger->info("REVERSE SIGNAL: Current position is {$state['positionSide']}, new signal is $targetSide. Closing existing position early.");
-            
-            if (!$this->config->dryRun) {
-                $this->closeExistingPositionAndReverse($targetSide, $signal);
-                return;
-            } else {
-                $this->logger->info('DRY RUN - would close existing position and reverse to ' . $targetSide);
-                return;
-            }
+            $this->logger->info(
+                'Position already exists: ' . $state['position'] . ' ' . $state['positionSide']
+            );
+            return;
         }
 
-        // Standard entry logic when no position is open
-        $this->placeNewEntry($signal, $targetSide);
-    }
+        $side = $signal === 'BUY' ? 'BUY' : 'SELL';
 
-    /**
-     * Helper to open a fresh entry order (extracted from original executeOrder)
-     */
-    private function placeNewEntry(string $signal, string $side): void
-    {
-        $state = $this->state->load();
         $currentPrice = $this->client->getLatestPrice();
         $margin = $this->getTradeMargin();
 
@@ -224,9 +200,13 @@ class OrderManager
         $quantity = self::roundToStep($rawQuantity, $stepSize);
 
         if ($quantity <= 0 || $quantity < $minQty) {
+
             $this->logger->info(
-                "ERROR: computed quantity ($rawQuantity -> $quantity) is below exchange minimum ($minQty) for {$this->config->symbol}. Skipping."
+                "ERROR: computed quantity ($rawQuantity -> $quantity) is below the exchange "
+                . "minimum ($minQty) for {$this->config->symbol}. "
+                . 'Increase BASE_MARGIN or LEVERAGE. Skipping this signal.'
             );
+
             return;
         }
 
@@ -246,6 +226,13 @@ class OrderManager
             . ' | SL: ' . $protection['stopLoss']
             . ' | MARTINGALE LEVEL: ' . $state['martingaleLevel']
         );
+
+        if ($this->config->dryRun) {
+            $this->logger->info('DRY RUN - order NOT sent');
+            $this->logger->info('DRY RUN TP: ' . $protection['takeProfit']);
+            $this->logger->info('DRY RUN SL: ' . $protection['stopLoss']);
+            return;
+        }
 
         if (!$this->orderWsConnected || $this->orderWs === null) {
             $this->logger->info('ERROR: Binance order WebSocket is not connected.');
@@ -282,49 +269,8 @@ class OrderManager
         ];
 
         $this->orderWs->send($message);
+
         $this->logger->info("ENTRY ORDER SENT: $side $quantityString {$this->config->symbol}");
-    }
-
-    /**
-     * Closes current active position early using a market order with closePosition=true
-     */
-    private function closeExistingPositionAndReverse(string $targetSide, string $signal): void
-    {
-        $state = $this->state->load();
-        $currentPositionSide = $state['positionSide'];
-        $exitSide = self::getExitSide($currentPositionSide);
-
-        // Cancel any pending protection sibling orders first
-        // Binance futures allows clearing open orders or sending a market close with closePosition=true
-        $requestId = bin2hex(random_bytes(16));
-
-        $params = [
-            'apiKey' => $this->config->apiKey,
-            'symbol' => $this->config->symbol,
-            'side' => $exitSide,
-            'type' => 'MARKET',
-            'closePosition' => 'true', // Closes the entire position immediately via market order
-            'timestamp' => (int)(microtime(true) * 1000),
-            'recvWindow' => 5000,
-        ];
-
-        $params['signature'] = BinanceClient::createSignature($params, $this->config->secretKey);
-
-        $message = json_encode([
-            'id' => $requestId,
-            'method' => 'order.place',
-            'params' => $params,
-        ]);
-
-        $this->pendingRequests[$requestId] = [
-            'type' => 'EARLY_CLOSE_AND_REVERSE',
-            'nextSignal' => $signal,
-            'nextSide' => $targetSide,
-            'time' => time(),
-        ];
-
-        $this->orderWs->send($message);
-        $this->logger->info("EARLY CLOSE SENT: Market order to close {$state['position']} position.");
     }
 
     /*
